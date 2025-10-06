@@ -1,0 +1,264 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Dibujar AOI</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css" />
+  <style>#map { height: 100vh; }</style>
+    <style>
+  #toast {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background-color: #2ecc71;
+    color: white;
+    padding: 12px 20px;
+    border-radius: 6px;
+    font-family: sans-serif;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+    display: none;
+    z-index: 9999;
+
+    body {
+      margin: 0;
+      font-family: sans-serif;
+    }
+    #container {
+      display: flex;
+      height: 100vh;
+    }
+    #map {
+      flex: 2;
+      height: 100%;
+    }
+    #sidebar {
+      flex: 1;
+      padding: 20px;
+      background-color: #f4f4f4;
+      overflow-y: auto;
+      box-shadow: inset 0 0 5px rgba(0,0,0,0.1);
+    }
+    button {
+      padding: 10px 15px;
+      margin-bottom: 10px;
+      background-color: #3498db;
+      color: white;
+      border: none;
+      cursor: pointer;
+    }
+    button:hover {
+      background-color: #2980b9;
+    }
+    #granules ul {
+      padding-left: 20px;
+    }
+  
+  }
+</style>
+
+
+</head>
+<body style="margin: 0; font-family: sans-serif;">
+    <div style="display: flex; height: 100vh;">
+         
+                
+                <div id="sidebar">
+                <h2>Controles</h2>
+                <button onclick="consultarGranules()">Consultar granules MODIS</button>
+                <div id="granules"></div>
+                </div>
+            
+
+            <div id="map" style="flex: 2; height: 100%;"></div>
+             <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+             <script src="https://unpkg.com/leaflet-draw/dist/leaflet.draw.js"></script>
+             <script src="script.js"></script>
+            <script>
+            //  Capa callejera (OpenStreetMap)
+            const osm = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+            attribution: "© OpenStreetMap contributors"
+            });
+
+            //  Capa satelital (Esri)
+            const esriSat = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {
+            attribution: "Tiles © Esri — Source: Esri, Maxar, Earthstar Geographics"
+            });
+
+            //  Capa de etiquetas (Esri)
+            const esriLabels = L.tileLayer("https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}", {
+            attribution: "Labels © Esri"
+            });
+
+            const map = L.map("map", {
+            center: [11.0, -74.0],
+            zoom: 7,
+            layers: [esriSat, esriLabels]  // Capa inicial: satelital + etiquetas
+            });
+
+
+            const baseMaps = {
+            "Satélite (Esri)": esriSat,
+            "Callejero (OSM)": osm
+            };
+
+            const overlayMaps = {
+            "Etiquetas (Esri)": esriLabels
+            };
+
+            L.control.layers(baseMaps, overlayMaps, { collapsed: false }).addTo(map);
+
+                const drawnItems = new L.FeatureGroup();
+                map.addLayer(drawnItems);
+
+                const drawControl = new L.Control.Draw({
+                draw: {
+                    polygon: true,
+                    rectangle: true,
+                    circle: false,
+                    marker: false,
+                    polyline: false
+                },
+                edit: {
+                    featureGroup: drawnItems
+                }
+                });
+                map.addControl(drawControl);
+
+                map.on("draw:created", function (e) {
+                const layer = e.layer;
+                drawnItems.clearLayers();
+                drawnItems.addLayer(layer);
+
+                const geojson = layer.toGeoJSON();
+                fetch("/save_aoi", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(geojson)
+                })
+                .then(res => res.json())
+                .then(data => alert(data.message))
+                .catch(err => alert("Error al guardar el AOI"));
+                });
+            </script>
+
+
+            <div id="toast">AOI guardado correctamente </div>
+
+            <script>
+            function showToast(message, success = true) {
+            const toast = document.getElementById("toast");
+            toast.textContent = message;
+            toast.style.backgroundColor = success ? "#2ecc71" : "#e74c3c";
+            toast.style.display = "block";
+            setTimeout(() => {
+                toast.style.display = "none";
+            }, 4000);
+            }
+
+            map.on("draw:created", function (e) {
+            const layer = e.layer;
+            drawnItems.clearLayers();
+            drawnItems.addLayer(layer);
+
+            const geojson = layer.toGeoJSON();
+            fetch("/save_aoi", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(geojson)
+            })
+            .then(res => res.json())
+            .then(data => {
+                showToast(data.message, data.status === "success");
+
+                if (data.status === "success") {
+                fetch("/get_aoi")
+                    .then(res => res.json())
+                    .then(data => {
+                    if (data && data.geometry) {
+                        const layer = L.geoJSON(data);
+                        drawnItems.clearLayers();
+                        drawnItems.addLayer(layer);
+                        map.fitBounds(layer.getBounds());
+                    }
+                    });
+                }
+            })
+            .catch(err => {
+                showToast("Error al guardar el AOI ", false);
+            });
+            });
+
+
+            // 🔄 Cargar AOI guardado al iniciar
+            fetch("/get_aoi")
+            .then(res => res.json())
+            .then(data => {
+                if (data && data.geometry) {
+                const layer = L.geoJSON(data);
+                drawnItems.clearLayers();
+                drawnItems.addLayer(layer);
+                map.fitBounds(layer.getBounds());
+                }
+            });
+
+            map.on("draw:created", function (e) {
+            const layer = e.layer;
+            drawnItems.clearLayers();
+            drawnItems.addLayer(layer);
+
+            const geojson = layer.toGeoJSON();
+            fetch("/save_aoi", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(geojson)
+            })
+            .then(res => res.json())
+            .then(data => {
+                showToast(data.message, data.status === "success");
+
+                // 🔄 Mostrar el AOI guardado en el mapa
+                fetch("/get_aoi")
+                .then(res => res.json())
+                .then(data => {
+                    if (data && data.geometry) {
+                    const layer = L.geoJSON(data);
+                    drawnItems.clearLayers();
+                    drawnItems.addLayer(layer);
+                    map.fitBounds(layer.getBounds());
+                    }
+                });
+            })
+            .catch(err => {
+                showToast("Error al guardar el AOI ", false);
+            });
+            });
+
+            function consultarGranules() {
+            fetch("/get_granules")
+                .then(res => res.json())
+                .then(data => {
+                const div = document.getElementById("granules");
+                if (data.status === "success") {
+                    div.innerHTML = `<h3>Granules encontrados: ${data.count}</h3><ul>` +
+                    data.granules.map(g => `<li><a href="${g.url}" target="_blank">${g.title}</a> (${g.date})</li>`).join("") +
+                    `</ul>`;
+                } else {
+                    div.innerHTML = `<p style="color:red;">${data.message}</p>`;
+                }
+                })
+                .catch(err => {
+                document.getElementById("granules").innerHTML = `<p style="color:red;">Error al consultar granules ❌</p>`;
+                });
+            }
+
+
+        
+        </script>
+
+    
+
+    </div>
+</body>
+</html>
