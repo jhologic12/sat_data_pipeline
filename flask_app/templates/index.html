@@ -56,6 +56,17 @@
     }
   
   }
+
+  
+.granule-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 8px; /* Espacio entre elementos */
+  max-width: 250px;
+  margin-bottom: 10px;
+}
+
+
 </style>
 
 
@@ -66,10 +77,21 @@
                 
                 <div id="sidebar">
                 <h2>Controles</h2>
-                <button onclick="consultarGranules()">Consultar granules MODIS</button>
+
+                   <div class="granule-controls">
+                    <label for="start">Inicio:</label>
+                    <input type="date" id="start" value="2023-01-01">
+
+                    <label for="end">Fin:</label>
+                    <input type="date" id="end" value="2023-01-31">
+
+                    <button onclick="consultarGranules()">Consultar granules MODIS</button>
+                </div>
                 <div id="granules"></div>
                 </div>
             
+
+                    
 
             <div id="map" style="flex: 2; height: 100%;"></div>
              <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
@@ -97,6 +119,7 @@
             layers: [esriSat, esriLabels]  // Capa inicial: satelital + etiquetas
             });
 
+            let granuleLayer = L.layerGroup().addTo(map);
 
             const baseMaps = {
             "Satélite (Esri)": esriSat,
@@ -141,6 +164,24 @@
                 .then(data => alert(data.message))
                 .catch(err => alert("Error al guardar el AOI"));
                 });
+
+
+
+                function mostrarGranulesEnMapa(granules) {
+                    granuleLayer.clearLayers(); // Limpia los anteriores
+
+                        granules.forEach(g => {
+                            if (g.lat && g.lon) {
+                                const marker = L.marker([g.lat, g.lon]);
+                                marker.bindPopup(`
+                                    <strong>${g.title}</strong><br>
+                                    Fecha: ${g.date}<br>
+                                    <a href="${g.url}" target="_blank">Descargar</a>
+                                `);
+                                granuleLayer.addLayer(marker);
+                        }
+    });
+}
             </script>
 
 
@@ -235,24 +276,23 @@
             });
             });
 
-            function consultarGranules() {
-            fetch("/get_granules")
-                .then(res => res.json())
-                .then(data => {
-                const div = document.getElementById("granules");
-                if (data.status === "success") {
-                    div.innerHTML = `<h3>Granules encontrados: ${data.count}</h3><ul>` +
-                    data.granules.map(g => `<li><a href="${g.url}" target="_blank">${g.title}</a> (${g.date})</li>`).join("") +
-                    `</ul>`;
-                } else {
-                    div.innerHTML = `<p style="color:red;">${data.message}</p>`;
-                }
-                })
-                .catch(err => {
-                document.getElementById("granules").innerHTML = `<p style="color:red;">Error al consultar granules ❌</p>`;
-                });
-            }
+           function consultarGranules() {
+                    const start = document.getElementById("start").value;
+                    const end = document.getElementById("end").value;
 
+                fetch(`/get_granules?start=${start}&end=${end}`)
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.status === "success") {
+                            mostrarGranulesEnMapa(data.granules);
+                        } else {
+                            alert(data.message);
+                        }
+                    })
+                    .catch(err => {
+                        console.error("Error al consultar granules:", err);
+                    });
+            }
 
         
         </script>

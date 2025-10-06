@@ -2,4 +2,10 @@ sentinelhub
 geopandas
 shapely
 rasterio
-logging
+python-dotenv
+flask==2.3.3
+earthaccess
+requests
+
+
+
